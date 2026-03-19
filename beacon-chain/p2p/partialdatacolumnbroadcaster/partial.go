@@ -458,9 +458,19 @@ func (p *PartialColumnBroadcaster) handleIncomingRPC(rpcWithFrom rpcWithFrom) er
 			var reject bool
 			verifier, reject, err = p.partialVerifierFromHeader(&newColumn)
 			if err != nil {
-				p.logger.WithError(err).WithField("reject", reject).Debug("Header validation failed")
+				p.logger.WithError(err).WithFields(logrus.Fields{
+					"reject": reject,
+					"from":   rpcWithFrom.from,
+					"topic":  topicID,
+					"group":  groupID,
+				}).Warn("Partial header validation failed")
 				if reject {
 					// REJECT case: penalize the peer
+					p.logger.WithFields(logrus.Fields{
+						"from":  rpcWithFrom.from,
+						"topic": topicID,
+						"group": groupID,
+					}).Warn("Downscoring peer for invalid partial header (PeerFeedbackInvalidMessage)")
 					_ = p.peerFeedback(topicID, rpcWithFrom.from, pubsub.PeerFeedbackInvalidMessage)
 				}
 				// Both REJECT and IGNORE: don't process further
@@ -538,10 +548,18 @@ func (p *PartialColumnBroadcaster) handleIncomingRPC(rpcWithFrom rpcWithFrom) er
 				start := time.Now()
 				err := p.validateColumn(cellsToVerify)
 				if err != nil {
-					logger.WithError(err).Error("Failed to validate cells")
+					logger.WithError(err).WithFields(logrus.Fields{
+						"numCells":    len(cellsToVerify),
+						"cellIndices": cellIndices,
+					}).Warn("Downscoring peer for invalid partial cells (PeerFeedbackInvalidMessage)")
 					_ = p.peerFeedback(topicID, rpcWithFrom.from, pubsub.PeerFeedbackInvalidMessage)
 					return
 				}
+				logger.WithFields(logrus.Fields{
+					"numCells":    len(cellsToVerify),
+					"cellIndices": cellIndices,
+					"duration":    time.Since(start),
+				}).Debug("Partial cells validated successfully (PeerFeedbackUsefulMessage)")
 				_ = p.peerFeedback(topicID, rpcWithFrom.from, pubsub.PeerFeedbackUsefulMessage)
 				p.incomingReq <- request{
 					kind: requestKindCellsValidated,

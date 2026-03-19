@@ -16,6 +16,7 @@ import (
 	pubsubpb "github.com/libp2p/go-libp2p-pubsub/pb"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -150,6 +151,23 @@ func (s *Service) peerInspector(peerMap map[peer.ID]*pubsub.PeerScoreSnapshot) {
 	for pid, snap := range peerMap {
 		s.peers.Scorers().GossipScorer().SetGossipData(pid, snap.Score,
 			snap.BehaviourPenalty, convertTopicScores(snap.Topics))
+
+		if snap.Score < 0 {
+			fields := logrus.Fields{
+				"peer":               pid,
+				"score":              snap.Score,
+				"behaviourPenalty":   snap.BehaviourPenalty,
+				"ipColocationFactor": snap.IPColocationFactor,
+				"appSpecificScore":   snap.AppSpecificScore,
+			}
+			for topic, ts := range snap.Topics {
+				fields[fmt.Sprintf("topic[%s].invalidMessageDeliveries", topic)] = ts.InvalidMessageDeliveries
+				fields[fmt.Sprintf("topic[%s].firstMessageDeliveries", topic)] = ts.FirstMessageDeliveries
+				fields[fmt.Sprintf("topic[%s].meshMessageDeliveries", topic)] = ts.MeshMessageDeliveries
+				fields[fmt.Sprintf("topic[%s].timeInMesh", topic)] = ts.TimeInMesh
+			}
+			log.WithFields(fields).Warn("Peer has negative gossip score")
+		}
 	}
 }
 

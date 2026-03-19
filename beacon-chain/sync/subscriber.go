@@ -532,17 +532,25 @@ func (s *Service) wrapAndReportValidation(topic string, v wrappedVal) (string, p
 			b = pubsub.ValidationIgnore
 		}
 		if b == pubsub.ValidationReject {
+			gossipScore, bPenalty, topicScores, _ := s.cfg.p2p.Peers().Scorers().GossipScorer().GossipData(pid)
 			fields := logrus.Fields{
-				"topic":        topic,
-				"multiaddress": multiAddr(pid, s.cfg.p2p.Peers()),
-				"peerID":       pid.String(),
-				"agent":        agentString(pid, s.cfg.p2p.Host()),
-				"gossipScore":  s.cfg.p2p.Peers().Scorers().GossipScorer().Score(pid),
+				"topic":            topic,
+				"multiaddress":     multiAddr(pid, s.cfg.p2p.Peers()),
+				"peerID":           pid.String(),
+				"agent":            agentString(pid, s.cfg.p2p.Host()),
+				"gossipScore":      gossipScore,
+				"behaviourPenalty": bPenalty,
+			}
+			if ts, ok := topicScores[topic]; ok {
+				fields["topicInvalidMessageDeliveries"] = ts.InvalidMessageDeliveries
+				fields["topicFirstMessageDeliveries"] = ts.FirstMessageDeliveries
+				fields["topicMeshMessageDeliveries"] = ts.MeshMessageDeliveries
+				fields["topicTimeInMesh"] = ts.TimeInMesh
 			}
 			if features.Get().EnableFullSSZDataLogging {
 				fields["message"] = hexutil.Encode(msg.Data)
 			}
-			log.WithError(err).WithFields(fields).Debug("Gossip message was rejected")
+			log.WithError(err).WithFields(fields).Warn("Gossip message was rejected (will increase InvalidMessageDeliveries)")
 			messageFailedValidationCounter.WithLabelValues(topic).Inc()
 		}
 		if b == pubsub.ValidationIgnore {
